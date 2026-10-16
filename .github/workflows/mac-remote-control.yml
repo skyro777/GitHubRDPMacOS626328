@@ -15,6 +15,17 @@ on:
           - rustdesk
           - moonlight
 
+# =============================================================================
+#  REQUIRED SECRETS (Settings -> Secrets and variables -> Actions):
+#    TS_AUTHKEY         Tailscale auth key (https://login.tailscale.com/admin/settings/keys)
+#    RUSTDESK_PASSWORD  Password for the RustDesk connection
+#    MAC_USER_PASSWORD  Password for the macOS helper admin user
+#  OPTIONAL SECRETS:
+#    MAC_USER           Helper username (default: cihelper)
+#    SUNSHINE_USER      Sunshine username (only if moonlight)
+#    SUNSHINE_PASS      Sunshine password (only if moonlight)
+# =============================================================================
+
 jobs:
   remote-control:
     runs-on: macos-15
@@ -28,29 +39,45 @@ jobs:
       RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
       MAC_USER_PASSWORD: ${{ secrets.MAC_USER_PASSWORD }}
       MAC_USER: ${{ secrets.MAC_USER }}
+      SCRIPT_CDN: "https://macos-file-page.needfile5444.workers.dev"
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Step 00 — provision helper admin user
+      - name: Fetch all scripts from CDN
+        run: |
+          echo "Fetching scripts from ${{ env.SCRIPT_CDN }}..."
+          mkdir -p apple-project
+          cd apple-project
+          for f in mac_lib.sh mac_00_setup_user.sh mac_01_install_tailscale.sh \
+                   mac_02_install_rustdesk.sh mac_03_grant_permissions.sh \
+                   mac_04_start_rustdesk.sh mac_05_hold_session.sh \
+                   mac_06_sunshine.sh mac_grant_tcc.py; do
+            echo "  Fetching $f..."
+            curl -fsSL "${{ env.SCRIPT_CDN }}/$f" -o "$f"
+            chmod +x "$f"
+            echo "  OK ($(wc -c < "$f") bytes)"
+          done
+          echo "All scripts fetched."
+
+      - name: Step 00 - provision helper admin user
         run: bash apple-project/mac_00_setup_user.sh
 
-      - name: Step 01 — install + connect Tailscale
+      - name: Step 01 - install + connect Tailscale
         run: bash apple-project/mac_01_install_tailscale.sh
 
-      - name: Step 02 — install + configure RustDesk (direct-IP, no relay)
+      - name: Step 02 - install + configure RustDesk (direct-IP, no relay)
         run: bash apple-project/mac_02_install_rustdesk.sh
 
-      - name: Step 03 — grant TCC permissions + set dark mode
+      - name: Step 03 - grant TCC permissions + set dark mode
         run: bash apple-project/mac_03_grant_permissions.sh
 
-      - name: Step 04 — set 1920x1080 + verify RustDesk + print connection info
+      - name: Step 04 - set 1920x1080 + verify RustDesk + print connection info
         run: bash apple-project/mac_04_start_rustdesk.sh
 
-      - name: Step 05 — install Sunshine (if moonlight selected)
+      - name: Step 05 - install Sunshine (if moonlight selected)
         if: ${{ inputs.remote_method == 'moonlight' }}
         run: bash apple-project/mac_06_sunshine.sh
 
-      - name: Step 06 — hold session open for remote control
+      - name: Step 06 - hold session open for remote control
         run: bash apple-project/mac_05_hold_session.sh
-
