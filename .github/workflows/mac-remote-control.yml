@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       hold_minutes:
-        description: "Session duration in minutes. 0 = no limit (GitHub closes at 6h). Default: 0"
+        description: "Session duration in minutes. 0 = no limit (GitHub caps at 6h). Default: 0"
         required: false
         default: "0"
       remote_method:
-        description: "Remote control method: rustdesk (default) or moonlight"
+        description: "Remote control method: rustdesk or moonlight"
         type: choice
         default: rustdesk
         options:
@@ -16,14 +16,14 @@ on:
           - moonlight
 
 # =============================================================================
-#  REQUIRED SECRETS (Settings -> Secrets and variables -> Actions):
+#  REQUIRED SECRETS (Settings -> Secrets -> Actions):
 #    TS_AUTHKEY         Tailscale auth key (https://login.tailscale.com/admin/settings/keys)
-#    RUSTDESK_PASSWORD  Password for the RustDesk connection
-#    MAC_USER_PASSWORD  Password for the macOS helper admin user
+#    RUSTDESK_PASSWORD  Password for RustDesk connection (rustdesk only)
+#    MAC_USER_PASSWORD  Password for macOS helper admin user
 #  OPTIONAL SECRETS:
 #    MAC_USER           Helper username (default: cihelper)
-#    SUNSHINE_USER      Sunshine username (only if moonlight)
-#    SUNSHINE_PASS      Sunshine password (only if moonlight)
+#    SUNSHINE_USER      Sunshine username (moonlight only)
+#    SUNSHINE_PASS      Sunshine password (moonlight only)
 # =============================================================================
 
 jobs:
@@ -31,6 +31,16 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 360
     env:
+      # Speed optimizations
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_INSTALL_UPGRADE: "1"
+      HOMEBREW_CURL_RETRIES: "5"
+      HOMEBREW_MAKE_JOBS: "4"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_INPUT: "1"
+      # Session config
       HOLD_MINUTES: ${{ inputs.hold_minutes }}
       REMOTE_METHOD: ${{ inputs.remote_method }}
       SUNSHINE_USER: ${{ secrets.SUNSHINE_USER }}
@@ -44,9 +54,28 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Fetch all scripts from CDN
+      # --- Speed: free RAM + disable Spotlight ---
+      - name: Optimize runner (free RAM + disable Spotlight)
         run: |
-          echo "Fetching scripts from ${{ env.SCRIPT_CDN }}..."
+          sudo purge 2>/dev/null || true
+          sudo mdutil -a -i off 2>/dev/null || true
+          echo "RAM after purge:"
+          vm_stat | head -5
+
+      # --- Cache scripts (fetch from CDN only if not in repo or cache) ---
+      - name: Cache scripts
+        id: cache-scripts
+        uses: actions/cache@v4
+        with:
+          path: apple-project
+          key: macos-scripts-${{ hashFiles('apple-project/mac_lib.sh') }}
+          restore-keys: |
+            macos-scripts-
+
+      - name: Fetch scripts from CDN (only if not cached)
+        if: steps.cache-scripts.outputs.cache-hit != 'true'
+        run: |
+          echo "Scripts not cached — fetching from ${{ env.SCRIPT_CDN }}..."
           mkdir -p apple-project
           cd apple-project
           for f in mac_lib.sh mac_00_setup_user.sh mac_01_install_tailscale.sh \
@@ -56,28 +85,44 @@ jobs:
             echo "  Fetching $f..."
             curl -fsSL "${{ env.SCRIPT_CDN }}/$f" -o "$f"
             chmod +x "$f"
-            echo "  OK ($(wc -c < "$f") bytes)"
           done
           echo "All scripts fetched."
+        continue-on-error: false
 
+      - name: Verify scripts exist
+        run: |
+          if [ ! -f apple-project/mac_lib.sh ]; then
+            echo "ERROR: Scripts not found — cache miss + CDN fetch failed"
+            exit 1
+          fi
+          echo "Scripts ready ($(ls apple-project/ | wc -l) files)"
+
+      # --- Step 00: always needed (helper user for both methods) ---
       - name: Step 00 - provision helper admin user
         run: bash apple-project/mac_00_setup_user.sh
 
+      # --- Step 01: always needed (Tailscale for both methods) ---
       - name: Step 01 - install + connect Tailscale
         run: bash apple-project/mac_01_install_tailscale.sh
 
-      - name: Step 02 - install + configure RustDesk (direct-IP, no relay)
+      # --- RustDesk path (skip if moonlight) ---
+      - name: Step 02 - install + configure RustDesk
+        if: ${{ inputs.remote_method == 'rustdesk' }}
         run: bash apple-project/mac_02_install_rustdesk.sh
 
-      - name: Step 03 - grant TCC permissions + set dark mode
+      - name: Step 03 - grant TCC permissions
+        if: ${{ inputs.remote_method == 'rustdesk' }}
         run: bash apple-project/mac_03_grant_permissions.sh
 
-      - name: Step 04 - set 1920x1080 + verify RustDesk + print connection info
+      - name: Step 04 - verify RustDesk + print connection info
+        if: ${{ inputs.remote_method == 'rustdesk' }}
         run: bash apple-project/mac_04_start_rustdesk.sh
 
-      - name: Step 05 - install Sunshine (if moonlight selected)
+      # --- Moonlight path (skip if rustdesk) ---
+      - name: Step 05 - install Sunshine (moonlight only)
         if: ${{ inputs.remote_method == 'moonlight' }}
         run: bash apple-project/mac_06_sunshine.sh
 
+      # --- Step 06: always needed (hold session open) ---
       - name: Step 06 - hold session open for remote control
         run: bash apple-project/mac_05_hold_session.sh

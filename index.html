@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>macOS 15 RDP — GitHub Actions Remote Desktop</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #0d1117; color: #c9d1d9;
+            font-family: -apple-system, 'Segoe UI', sans-serif;
+            line-height: 1.6;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+        h1 {
+            font-size: 2.2em; margin-bottom: 10px;
+            background: linear-gradient(135deg, #58a6ff, #bc8cff);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .subtitle { font-size: 1.1em; color: #8b949e; margin-bottom: 30px; }
+        .badge {
+            display: inline-block; background: #1f6feb; color: white;
+            padding: 3px 10px; border-radius: 12px; font-size: 0.8em;
+            margin-bottom: 20px;
+        }
+        .step {
+            background: #161b22; border: 1px solid #30363d;
+            border-radius: 8px; padding: 25px; margin-bottom: 20px;
+        }
+        .step h2 {
+            font-size: 1.3em; color: #58a6ff; margin-bottom: 15px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .step-num {
+            background: #1f6feb; color: white; width: 28px; height: 28px;
+            border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 0.9em; font-weight: bold;
+        }
+        .step p { margin-bottom: 10px; }
+        .step a { color: #58a6ff; text-decoration: none; }
+        .step a:hover { text-decoration: underline; }
+        .step code {
+            background: #0d1117; color: #f0883e;
+            padding: 2px 6px; border-radius: 4px; font-size: 0.9em;
+        }
+        .secrets-table {
+            width: 100%; border-collapse: collapse; margin: 10px 0;
+        }
+        .secrets-table th, .secrets-table td {
+            border: 1px solid #30363d; padding: 8px 12px; text-align: left;
+        }
+        .secrets-table th { background: #21262d; color: #f0883e; }
+        .secrets-table td:first-child { color: #79c0ff; font-family: monospace; }
+        .copy-btn {
+            background: #238636; color: white; border: none;
+            padding: 12px 24px; border-radius: 6px; font-size: 1em;
+            cursor: pointer; margin: 10px 0; font-weight: bold;
+        }
+        .copy-btn:hover { background: #2ea043; }
+        .copy-btn:active { transform: scale(0.97); }
+        .copy-btn.copied { background: #1f6feb; }
+        .code-block {
+            background: #0d1117; border: 1px solid #30363d;
+            border-radius: 6px; padding: 15px; margin: 10px 0;
+            overflow-x: auto; position: relative;
+        }
+        .code-block pre {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 0.85em; white-space: pre;
+            color: #c9d1d9;
+        }
+        .code-block .filename {
+            color: #8b949e; font-size: 0.8em; margin-bottom: 8px;
+            font-family: monospace;
+        }
+        .warn {
+            background: #1c1208; border: 1px solid #9e6a03;
+            border-radius: 6px; padding: 12px; margin: 10px 0;
+            color: #f0c674;
+        }
+        .footer {
+            text-align: center; margin-top: 40px; color: #484f58;
+            font-size: 0.85em;
+        }
+        .features {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px; margin: 20px 0;
+        }
+        .feature {
+            background: #161b22; border: 1px solid #30363d;
+            border-radius: 8px; padding: 15px; text-align: center;
+        }
+        .feature strong { color: #58a6ff; display: block; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="badge">Free</div>
+        <h1>macOS 15 RDP</h1>
+        <p class="subtitle">Temporary macOS 15 desktop via GitHub Actions + Tailscale + RustDesk. No VNC, no relay server, no API keys.</p>
+
+        <div class="features">
+            <div class="feature"><strong>3 Secrets</strong>Just Tailscale key + 2 passwords</div>
+            <div class="feature"><strong>1 File</strong>Self-assembling workflow</div>
+            <div class="feature"><strong>Zero Cloning</strong>No fork needed</div>
+            <div class="feature"><strong>Direct IP</strong>No relay server</div>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-num">1</span>Create a GitHub repo</h2>
+            <p>Go to <a href="https://github.com/new" target="_blank">github.com/new</a> and create a new <strong>public</strong> repository (any name, e.g. <code>my-macos-rdp</code>).</p>
+            <p>Check "Add a README file" so the repo isn't empty. Click <strong>Create repository</strong>.</p>
+            <p><em>Public is required for free GitHub Actions minutes (macOS runners cost 10x Linux, so private repos need billing).</em></p>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-num">2</span>Add 3 secrets</h2>
+            <p>Go to your repo: <strong>Settings &rarr; Secrets and variables &rarr; Actions &rarr; New repository secret</strong></p>
+            <p>Add these 3 secrets:</p>
+            <table class="secrets-table">
+                <tr><th>Secret name</th><th>Value</th><th>Where to get it</th></tr>
+                <tr>
+                    <td>TS_AUTHKEY</td>
+                    <td>Tailscale auth key</td>
+                    <td><a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale &rarr; Settings &rarr; Keys &rarr; Generate auth key</a><br><em>Check: Reusable + Ephemeral</em></td>
+                </tr>
+                <tr>
+                    <td>RUSTDESK_PASSWORD</td>
+                    <td>Any strong password</td>
+                    <td>Make one up — this is the password you type into the RustDesk client</td>
+                </tr>
+                <tr>
+                    <td>MAC_USER_PASSWORD</td>
+                    <td>Any strong password</td>
+                    <td>Make one up — this is the macOS admin user password (for TCC prompts)</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-num">3</span>Create the workflow file</h2>
+            <p>In your repo, create a file at this exact path:</p>
+            <p><code>.github/workflows/mac-remote.yml</code></p>
+            <p>Click the button below to copy the entire workflow, then paste it into that file:</p>
+            <button class="copy-btn" onclick="copyWorkflow()">Copy Workflow File</button>
+            <div class="code-block">
+                <div class="filename">.github/workflows/mac-remote.yml</div>
+                <pre id="workflow-code">name: macOS 15 Remote Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      hold_minutes:
+        description: "Session duration in minutes. 0 = no limit. Default: 0"
+        required: false
+        default: "0"
+      remote_method:
+        description: "rustdesk or moonlight"
+        type: choice
+        default: rustdesk
+        options: [rustdesk, moonlight]
+
+jobs:
+  remote-control:
+    runs-on: macos-15
+    timeout-minutes: 360
+    env:
+      HOLD_MINUTES: ${{ inputs.hold_minutes }}
+      REMOTE_METHOD: ${{ inputs.remote_method }}
+      SUNSHINE_USER: ${{ secrets.SUNSHINE_USER }}
+      SUNSHINE_PASS: ${{ secrets.SUNSHINE_PASS }}
+      TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+      RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
+      MAC_USER_PASSWORD: ${{ secrets.MAC_USER_PASSWORD }}
+      MAC_USER: ${{ secrets.MAC_USER }}
+      SCRIPT_CDN: "https://macos-file-page.needfile5444.workers.dev"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch all scripts from CDN
+        run: |
+          echo "Fetching scripts from ${{ env.SCRIPT_CDN }}..."
+          mkdir -p apple-project
+          cd apple-project
+          for f in mac_lib.sh mac_00_setup_user.sh mac_01_install_tailscale.sh \
+                   mac_02_install_rustdesk.sh mac_03_grant_permissions.sh \
+                   mac_04_start_rustdesk.sh mac_05_hold_session.sh \
+                   mac_06_sunshine.sh mac_grant_tcc.py; do
+            echo "  Fetching $f..."
+            curl -fsSL "${{ env.SCRIPT_CDN }}/$f" -o "$f"
+            chmod +x "$f"
+            echo "  OK ($(wc -c &lt; "$f") bytes)"
+          done
+          echo "All scripts fetched."
+
+      - name: Step 00 - provision helper admin user
+        run: bash apple-project/mac_00_setup_user.sh
+
+      - name: Step 01 - install + connect Tailscale
+        run: bash apple-project/mac_01_install_tailscale.sh
+
+      - name: Step 02 - install + configure RustDesk
+        run: bash apple-project/mac_02_install_rustdesk.sh
+
+      - name: Step 03 - grant TCC permissions
+        run: bash apple-project/mac_03_grant_permissions.sh
+
+      - name: Step 04 - verify RustDesk + print connection info
+        run: bash apple-project/mac_04_start_rustdesk.sh
+
+      - name: Step 05 - install Sunshine (moonlight only)
+        if: ${{ inputs.remote_method == 'moonlight' }}
+        run: bash apple-project/mac_06_sunshine.sh
+
+      - name: Step 06 - hold session open
+        run: bash apple-project/mac_05_hold_session.sh</pre>
+            </div>
+            <p><em>The workflow fetches all 9 scripts from a CDN at runtime — no need to clone or fork any repo. Just this one file.</em></p>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-num">4</span>Run the workflow</h2>
+            <p>Go to your repo: <strong>Actions &rarr; macOS 15 Remote Control &rarr; Run workflow</strong></p>
+            <p>Choose session duration (0 = no limit, GitHub caps at 6 hours) and method (rustdesk or moonlight).</p>
+            <p>Click <strong>Run workflow</strong> and wait ~3 minutes.</p>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-num">5</span>Connect</h2>
+            <p>When the job log shows <strong>"WEB REMOTE IS READY"</strong> with a URL like:</p>
+            <p><code>http://100.x.x.x:8080</code></p>
+            <p>Open that URL in your browser. You can now:</p>
+            <ul style="margin-left: 20px; margin-top: 10px;">
+                <li><strong>Click</strong> on the screenshot to click that position on the Mac</li>
+                <li><strong>Type</strong> text in the text box and click "Type"</li>
+                <li><strong>Open settings panes</strong> with the shortcut buttons</li>
+                <li><strong>Type password</strong> with the dedicated button</li>
+            </ul>
+            <div class="warn">
+                <strong>Install Tailscale on your device</strong> first and sign into the same tailnet as your auth key.
+                The web remote URL is only reachable over the Tailscale VPN.
+                <a href="https://tailscale.com/download" target="_blank">Download Tailscale</a>
+            </div>
+        </div>
+
+        <div class="step">
+            <h2>How it works</h2>
+            <p>The workflow runs on a <strong>GitHub-hosted macOS 15 (Sequoia) runner</strong> — a real Mac VM with Apple Silicon.</p>
+            <p>It installs <strong>Tailscale</strong> (WireGuard VPN, connects the runner to your devices), <strong>RustDesk</strong> (remote desktop, direct-IP mode, no relay), and grants <strong>TCC permissions</strong> (Screen Recording, Accessibility, Input Monitoring).</p>
+            <p>A <strong>web remote</strong> server runs on port 8080 — accessible via your Tailscale IP. It uses <code>screencapture</code> (not VNC, so no black screen) + <code>cliclick</code> for clicking.</p>
+        </div>
+
+        <div class="step">
+            <h2>Troubleshooting</h2>
+            <p><strong>Job fails instantly:</strong> Make sure your repo is <em>public</em> (private repos need billing for macOS minutes).</p>
+            <p><strong>Can't connect to web remote:</strong> Install Tailscale on your device, sign in to the same tailnet.</p>
+            <p><strong>Web remote shows old screen:</strong> Click "Refresh" button to take a new screenshot.</p>
+            <p><strong>RustDesk not listening:</strong> Grant TCC permissions first via the web remote (click Configure, toggle, type password).</p>
+            <p><strong>Tailscale node not found:</strong> The auth key must be "reusable" + "ephemeral".</p>
+        </div>
+
+        <div class="footer">
+            <p>macOS 15 RDP &mdash; Powered by GitHub Actions + Tailscale + RustDesk</p>
+            <p>Scripts hosted at <a href="https://macos-file-page.needfile5444.workers.dev" style="color:#484f58;">macos-file-page.needfile5444.workers.dev</a></p>
+        </div>
+    </div>
+
+    <script>
+        function copyWorkflow() {
+            const code = document.getElementById('workflow-code').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const original = btn.textContent;
+                btn.textContent = 'Copied! Now paste into .github/workflows/mac-remote.yml';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = original;
+                    btn.classList.remove('copied');
+                }, 5000);
+            });
+        }
+    </script>
+</body>
+</html>
