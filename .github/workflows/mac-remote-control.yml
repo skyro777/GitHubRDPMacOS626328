@@ -62,38 +62,59 @@ jobs:
           echo "RAM after purge:"
           vm_stat | head -5
 
-      # --- Cache scripts (fetch from CDN only if not in repo or cache) ---
+      # --- Cache scripts (busts on ANY script change) ---
+      # Key hashes ALL scripts (not just mac_lib.sh) so any fix pushed to
+      # apple-project/ invalidates the cache and the fresh checkout is used.
+      # The v2 prefix avoids matching stale entries written by the old key.
       - name: Cache scripts
         id: cache-scripts
         uses: actions/cache@v4
         with:
           path: apple-project
-          key: macos-scripts-${{ hashFiles('apple-project/mac_lib.sh') }}
+          key: macos-scripts-v2-${{ hashFiles('apple-project/*.sh', 'apple-project/*.py') }}
           restore-keys: |
-            macos-scripts-
+            macos-scripts-v2-
 
-      - name: Fetch scripts from CDN (only if not cached)
+      - name: Fetch scripts from CDN (only if MISSING — never overwrite repo checkout)
         if: steps.cache-scripts.outputs.cache-hit != 'true'
         run: |
-          echo "Scripts not cached — fetching from ${{ env.SCRIPT_CDN }}..."
+          # Only download scripts that are MISSING. The actions/checkout step
+          # already placed the latest committed scripts (with all fixes) into
+          # apple-project/. We must NOT overwrite them with the frozen CDN copy,
+          # otherwise committed fixes (e.g. the Sunshine Qt-crash DMG fallback +
+          # low-latency overrides) would be silently replaced by stale scripts.
           mkdir -p apple-project
           cd apple-project
+          FETCHED=0
           for f in mac_lib.sh mac_00_setup_user.sh mac_01_install_tailscale.sh \
                    mac_02_install_rustdesk.sh mac_03_grant_permissions.sh \
                    mac_04_start_rustdesk.sh mac_05_hold_session.sh \
                    mac_06_sunshine.sh mac_grant_tcc.py; do
-            echo "  Fetching $f..."
-            curl -fsSL "${{ env.SCRIPT_CDN }}/$f" -o "$f"
+            if [ -s "$f" ]; then
+              echo "  $f: present (from repo checkout) — keeping (not overwritten)"
+              chmod +x "$f" 2>/dev/null || true
+              continue
+            fi
+            echo "  $f: MISSING — fetching from ${{ env.SCRIPT_CDN }}"
+            curl -fsSL "${{ env.SCRIPT_CDN }}/$f" -o "$f" || { echo "ERROR: $f missing and CDN fetch failed"; exit 1; }
             chmod +x "$f"
+            FETCHED=$((FETCHED+1))
           done
-          echo "All scripts fetched."
-        continue-on-error: false
+          echo "Done. Fetched $FETCHED file(s) from CDN; the rest came from the repo checkout."
 
       - name: Verify scripts exist
         run: |
           if [ ! -f apple-project/mac_lib.sh ]; then
             echo "ERROR: Scripts not found — cache miss + CDN fetch failed"
             exit 1
+          fi
+          # Sanity-check the Sunshine script has the crash-fix markers, so we
+          # know we are NOT running the stale "defaults-only" version that
+          # crashes on the Homebrew Qt bottle mismatch.
+          if grep -q "launch_and_verify_sunshine" apple-project/mac_06_sunshine.sh 2>/dev/null; then
+            echo "OK: mac_06_sunshine.sh has the Qt-crash DMG-fallback fix"
+          else
+            echo "WARN: mac_06_sunshine.sh is MISSING the Qt-crash DMG-fallback fix — Sunshine may crash on launch"
           fi
           echo "Scripts ready ($(ls apple-project/ | wc -l) files)"
 
