@@ -126,17 +126,24 @@ jobs:
       - name: Step 01 - install + connect Tailscale
         run: bash apple-project/mac_01_install_tailscale.sh
 
-      # --- RustDesk path (skip if moonlight) ---
+      # --- Step 02: RustDesk install (rustdesk only; skipped for moonlight) ---
       - name: Step 02 - install + configure RustDesk
         if: ${{ inputs.remote_method == 'rustdesk' }}
         run: bash apple-project/mac_02_install_rustdesk.sh
 
-      - name: Step 03 - grant TCC permissions
-        if: ${{ inputs.remote_method == 'rustdesk' }}
+      # --- Step 03: env setup (BOTH methods) ---
+      # Method-aware: deps + 1920x1080 + dark mode + TCC + dialog loop run for
+      # BOTH methods (dark mode + reduced transparency = lower encoding latency
+      # for Sunshine too). The RustDesk install/config/TCC-grant/restart parts
+      # are skipped internally when remote_method=moonlight.
+      - name: Step 03 - grant TCC + set 1920x1080 + dark mode (both methods)
         run: bash apple-project/mac_03_grant_permissions.sh
 
-      - name: Step 04 - verify RustDesk + print connection info
-        if: ${{ inputs.remote_method == 'rustdesk' }}
+      # --- Step 04: SSH + connection info (BOTH methods) ---
+      # Method-aware: SSH enable + dialog-loop restart + connection-info block
+      # run for BOTH methods. RustDesk verify/ID is skipped internally for
+      # moonlight (Sunshine PIN page is printed by Step 05).
+      - name: Step 04 - enable SSH + connection info (both methods)
         run: bash apple-project/mac_04_start_rustdesk.sh
 
       # --- Moonlight path (skip if rustdesk) ---
@@ -145,5 +152,7 @@ jobs:
         run: bash apple-project/mac_06_sunshine.sh
 
       # --- Step 06: always needed (hold session open) ---
+      # Method-aware heartbeat: Sunshine:47990 for moonlight, RustDesk:21118
+      # for rustdesk.
       - name: Step 06 - hold session open for remote control
         run: bash apple-project/mac_05_hold_session.sh
